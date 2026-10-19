@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odds PCA Clusters 1-X-2</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#6b7380;--line:#e1e4ea;--c1:#1f9d55;--cx:#e0a100;--c2:#d64545;--acc:#2f5bea}
+  @media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2128;--ink:#e8ebf0;--mut:#98a1ae;--line:#2d333c;--c1:#3ec97a;--cx:#f0b429;--c2:#f06a6a;--acc:#6f93ff}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:4px 0 2px} .sub{color:var(--mut);margin:0 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+  label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+  select,input[type=number],button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+  button{cursor:pointer} button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .status{font-size:13px;color:var(--mut);margin-top:8px;white-space:pre-wrap}
+  .files{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
+  .files div{font-size:12px;color:var(--mut)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{font-size:12px;color:var(--mut);font-weight:600}
+  td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;min-width:34px;text-align:center;padding:2px 8px;border-radius:999px;color:#fff;font-weight:700}
+  .p1{background:var(--c1)} .pX{background:var(--cx)} .p2{background:var(--c2)}
+  .scroll{overflow-x:auto}
+  canvas{width:100%;height:340px;display:block}
+  .legend{display:flex;gap:14px;font-size:13px;color:var(--mut);margin-top:6px;flex-wrap:wrap}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+  .note{font-size:12px;color:var(--mut)}
+  .prog{height:10px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:10px}
+  .prog i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+  .prog.ind i{width:40%;animation:ind 1s infinite linear}
+  @keyframes ind{from{margin-left:-40%}to{margin-left:100%}}
+  .form span{display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;border-radius:3px;font-size:10px;color:#fff;margin-right:2px}
+  .fW{background:var(--c1)}.fD{background:var(--cx)}.fL{background:var(--c2)}
+  tr.zone td:first-child{border-left:3px solid var(--acc)}
+  .bar{display:flex;height:8px;border-radius:4px;overflow:hidden;min-width:90px}
+  .bar span{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>European leagues: PCA + clustering for 1 / X / 2</h1>
+  <p class="sub">PCA on the odds only. Past games (this season and last) keep their real result; each upcoming game is matched to its nearest past games in odds space and their results vote for 1 / X / 2.</p>
+
+  <div class="card">
+    <div class="row">
+      <div><label>Championship</label>
+        <select id="league">
+          <optgroup label="European cups">
+            <option value="CL">UEFA Champions League</option>
+            <option value="EL">UEFA Europa League</option>
+            <option value="UECL">UEFA Conference League</option>
+          </optgroup>
+          <optgroup label="Domestic leagues">
+          <option value="E0">England – Premier League</option>
+          <option value="E1">England – Championship</option>
+          <option value="SP1">Spain – La Liga</option>
+          <option value="SP2">Spain – Segunda División</option>
+          <option value="I1">Italy – Serie A</option>
+          <option value="I2">Italy – Serie B</option>
+          <option value="D1">Germany – Bundesliga</option>
+          <option value="F1">France – Ligue 1</option>
+          <option value="F2">France – Ligue 2</option>
+          <option value="N1">Netherlands – Eredivisie</option>
+          <option value="B1">Belgium – Pro League</option>
+          <option value="P1">Portugal – Primeira Liga</option>
+          <option value="T1">Turkey – Süper Lig</option>
+          <option value="G1">Greece – Super League</option>
+          <option value="SC0">Scotland – Premiership</option>
+          </optgroup>
+        </select></div>
+      <div><label>Neighbours</label>
+        <select id="knn"><option>3</option><option selected>5</option><option>7</option><option>10</option><option>15</option><option>25</option></select></div>
+      <div><label>Weight of each neighbour</label>
+        <select id="wmode"><option value="inv" selected>Closeness (1 ÷ distance)</option><option value="dist">Distance (as written)</option></select></div>
+      <div><label>Days ahead</label>
+        <select id="days"><option>3</option><option selected>4</option></select></div>
+      <div><button class="primary" id="go">Load &amp; analyse</button></div>
+      <div><button id="demo">Demo data</button></div>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="prog" id="prog" hidden><i id="progBar"></i></div>
+  </div>
+
+  <div class="card" id="stCard" hidden>
+    <h2 style="font-size:16px;margin:0 0 8px" id="stTitle">League table</h2>
+    <div class="scroll"><table id="stTbl"></table></div>
+  </div>
+
+  <div class="card" id="outCard" hidden>
+    <div class="note" id="varInfo"></div>
+    <canvas id="plot"></canvas>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--c1)"></i>1</span>
+      <span><i class="dot" style="background:var(--cx)"></i>X</span>
+      <span><i class="dot" style="background:var(--c2)"></i>2</span>
+      <span>Small dots = past games coloured by their real result · big outlined dots = upcoming games coloured by the suggestion</span>
+    </div>
+  </div>
+
+  <div class="card" id="tblCard" hidden>
+    <h2 style="font-size:16px;margin:0 0 8px">Upcoming games</h2>
+    <div class="scroll"><table id="tbl"></table></div>
+    <p class="note">Average = Σ(weight × score) ÷ Σ(weight) over the nearest games, score +1 for a 1, 0 for an X, −1 for a 2. It describes what happened in games with similar odds, not a guaranteed result. Gamble responsibly.</p>
+  </div>
+</div>
+
+<script>
+/*CORE*/
+function parseCSV(text){
+  const rows=[];let row=[],cur='',q=false;
+  text=text.replace(/^\uFEFF/,'');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c=='"'){ if(text[i+1]=='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if(c=='"') q=true;
+    else if(c==','){row.push(cur);cur='';}
+    else if(c=='\n'||c=='\r'){ if(c=='\r'&&text[i+1]=='\n')i++; row.push(cur);cur=''; if(row.length>1||row[0]!=='')rows.push(row); row=[]; }
+    else cur+=c;
+  }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);}
+  if(!rows.length) return [];
+  const h=rows[0].map(s=>s.trim());
+  return rows.slice(1).map(r=>{const o={};h.forEach((k,i)=>o[k]=(r[i]||'').trim());return o;});
+}
+function parseDate(d,t){
+  const m=(d||'').split('/'); if(m.length<3) return null;
+  let y=+m[2]; if(y<100) y+=2000;
+  const [hh,mm]=(t||'12:00').split(':').map(Number);
+  return new Date(y,+m[1]-1,+m[0],hh||0,mm||0);
+}
+function num(x){const v=parseFloat(x);return isFinite(v)?v:NaN;}
+function implied(h,d,a){
+  if(!(h>1&&d>1&&a>1)) return null;
+  const s=1/h+1/d+1/a; return [1/h/s,1/d/s,1/a/s];
+}
+// played matches with bet365 odds, sorted by date
+function toPlayed(rows){
+  return rows.map(r=>{
+    const date=parseDate(r.Date,r.Time); if(!date||!r.HomeTeam) return null;
+    const hg=num(r.FTHG),ag=num(r.FTAG); if(isNaN(hg)||isNaN(ag)) return null;
+    const oh=num(r.B365H),od=num(r.B365D),oa=num(r.B365A);
+    const p=implied(oh,od,oa);
+    return {date,home:r.HomeTeam,away:r.AwayTeam,hg,ag,p,o:p?[oh,od,oa]:null};
+  }).filter(Boolean).sort((a,b)=>a.date-b.date);
+}
+function mean(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:NaN;}
+function buildTeamStats(prevPlayed,curPlayed){
+  const all=prevPlayed.concat(curPlayed), T={};
+  const get=t=>T[t]||(T[t]={games:[],home:[],away:[],prevHome:[],prevAway:[]});
+  for(const m of all){
+    const isPrev=prevPlayed.includes(m);
+    const hp=m.hg>m.ag?3:m.hg==m.ag?1:0, ap=m.hg<m.ag?3:m.hg==m.ag?1:0;
+    const H=get(m.home),A=get(m.away);
+    H.games.push(hp); A.games.push(ap);
+    H.home.push(m.hg-m.ag); A.away.push(m.ag-m.hg);
+    // residual: actual win minus bet365 implied win probability
+    const resH=m.p?((m.hg>m.ag?1:0)-m.p[0]):null, resA=m.p?((m.ag>m.hg?1:0)-m.p[2]):null;
+    H.resH=(H.resH||[]); A.resA=(A.resA||[]);
+    if(resH!==null){H.resH.push(resH);A.resA.push(resA);}
+    if(isPrev&&m.p){H.prevHome.push(m.p[0]);A.prevAway.push(m.p[2]);}
+  }
+  return T;
+}
+const FEATURES=['P(1)','P(X)','P(2)','Form H','Form A','GD home','GD away','Last-yr P(1) H','Last-yr P(2) A','Value resid H','Value resid A'];
+function matchFeatures(fx,T){
+  const p=implied(num(fx.B365H),num(fx.B365D),num(fx.B365A)); if(!p) return null;
+  const h=T[fx.HomeTeam],a=T[fx.AwayTeam];
+  const fm=g=>g&&g.games.length?mean(g.games.slice(-6)):1.35;
+  const gd=l=>l&&l.length?mean(l.slice(-8)):0;
+  const pr=(l,d)=>l&&l.length?mean(l):d;
+  const rs=l=>l&&l.length?mean(l.slice(-15)):0;
+  return [p[0],p[1],p[2],fm(h),fm(a),gd(h&&h.home),gd(a&&a.away),
+          pr(h&&h.prevHome,p[0]),pr(a&&a.prevAway,p[2]),rs(h&&h.resH),rs(a&&a.resA)];
+}
+function standardize(X){
+  const n=X.length,d=X[0].length,mu=[],sd=[];
+  for(let j=0;j<d;j++){const c=X.map(r=>r[j]);const m=mean(c);const s=Math.sqrt(mean(c.map(v=>(v-m)**2)))||1;mu.push(m);sd.push(s);}
+  return {Z:X.map(r=>r.map((v,j)=>(v-mu[j])/sd[j])),mu,sd};
+}
+function jacobi(A){ // symmetric eigen-decomposition
+  const n=A.length; A=A.map(r=>r.slice());
+  const V=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>i==j?1:0));
+  for(let sweep=0;sweep<60;sweep++){
+    let off=0;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)off+=A[i][j]**2;
+    if(off<1e-18)break;
+    for(let p=0;p<n-1;p++)for(let q=p+1;q<n;q++){
+      if(Math.abs(A[p][q])<1e-15)continue;
+      const th=(A[q][q]-A[p][p])/(2*A[p][q]);
+      const t=Math.sign(th||1)/(Math.abs(th)+Math.sqrt(th*th+1));
+      const c=1/Math.sqrt(t*t+1),s=t*c;
+      for(let k=0;k<n;k++){const akp=A[k][p],akq=A[k][q];A[k][p]=c*akp-s*akq;A[k][q]=s*akp+c*akq;}
+      for(let k=0;k<n;k++){const apk=A[p][k],aqk=A[q][k];A[p][k]=c*apk-s*aqk;A[q][k]=s*apk+c*aqk;}
+      for(let k=0;k<n;k++){const vkp=V[k][p],vkq=V[k][q];V[k][p]=c*vkp-s*vkq;V[k][q]=s*vkp+c*vkq;}
+    }
+  }
+  const vals=A.map((r,i)=>r[i]);
+  const idx=vals.map((v,i)=>i).sort((a,b)=>vals[b]-vals[a]);
+  return {vals:idx.map(i=>vals[i]),vecs:idx.map(i=>V.map(r=>r[i]))}; // vecs[k] = k-th eigenvector
+}
+function pca(X){
+  const {Z}=standardize(X),n=Z.length,d=Z[0].length;
+  const C=Array.from({length:d},(_,i)=>Array.from({length:d},(_,j)=>{let s=0;for(let k=0;k<n;k++)s+=Z[k][i]*Z[k][j];return s/Math.max(1,n-1);}));
+  const {vals,vecs}=jacobi(C);
+  const tot=vals.reduce((a,b)=>a+Math.max(b,0),0)||1;
+  const ratio=vals.map(v=>Math.max(v,0)/tot);
+  let k=0,cum=0;while(k<d&&(cum<0.85||k<2)&&k<5){cum+=ratio[k];k++;}
+  k=Math.min(k,d);
+  const scores=Z.map(r=>vecs.slice(0,k).map(v=>v.reduce((s,w,j)=>s+w*r[j],0)));
+  return {scores,ratio,k,loadings:vecs};
+}
+function kmeans(P,K){
+  const n=P.length; K=Math.min(K,n); const d=P[0].length;
+  const order=P.map((_,i)=>i).sort((a,b)=>P[a][0]-P[b][0]);
+  let C=Array.from({length:K},(_,c)=>P[order[Math.floor((c+0.5)*n/K)]].slice());
+  let lab=new Array(n).fill(0);
+  for(let it=0;it<100;it++){
+    let ch=false;
+    for(let i=0;i<n;i++){
+      let b=0,bd=1e18;
+      for(let c=0;c<K;c++){let s=0;for(let j=0;j<d;j++)s+=(P[i][j]-C[c][j])**2;if(s<bd){bd=s;b=c;}}
+      if(lab[i]!==b){lab[i]=b;ch=true;}
+    }
+    C=C.map((cen,c)=>{const m=P.filter((_,i)=>lab[i]===c);return m.length?cen.map((_,j)=>mean(m.map(r=>r[j]))):cen;});
+    if(!ch)break;
+  }
+  return {lab,K};
+}
+// map clusters -> 1 / X / 2 using each cluster's average home edge in original feature space
+function suggest(F,lab,K){
+  const edge=c=>{const m=F.filter((_,i)=>lab[i]===c);return m.length?mean(m.map(r=>(r[0]-r[2])+0.15*(r[3]-r[4])/3)):0;};
+  const out={};
+  for(let c=0;c<K;c++){const e=edge(c);out[c]={edge:e,pick:e>0.10?'1':e<-0.10?'2':'X'};}
+  return out;
+}
+function analyse(fixtures,T){
+  const items=[];
+  for(const fx of fixtures){const f=matchFeatures(fx,T);if(f&&f.every(isFinite))items.push({fx,f});}
+  if(items.length<3) return {items,error:'Need at least 3 upcoming matches with bet365 odds in the window.'};
+  const F=items.map(i=>i.f), P=pca(F);
+  const km=kmeans(P.scores,3), map=suggest(F,km.lab,km.K);
+  items.forEach((it,i)=>{it.pc=P.scores[i];it.cluster=km.lab[i];it.pick=map[km.lab[i]].pick;it.p=[it.f[0],it.f[1],it.f[2]];});
+  return {items,pca:P,map,k:km.K};
+}
+
+/* ---- odds-only PCA + nearest-neighbour vote on past results ---- */
+function oddsVec(o){return [o[0],o[1],o[2]];} // exactly the three odds: 1, X, 2
+function pcaFit(X,target){
+  const st=standardize(X),Z=st.Z,n=Z.length,d=Z[0].length;
+  const C=Array.from({length:d},(_,i)=>Array.from({length:d},(_,j)=>{let s=0;for(let k=0;k<n;k++)s+=Z[k][i]*Z[k][j];return s/Math.max(1,n-1);}));
+  const {vals,vecs}=jacobi(C);
+  const tot=vals.reduce((a,b)=>a+Math.max(b,0),0)||1,ratio=vals.map(v=>Math.max(v,0)/tot);
+  let k=0,cum=0;while(k<d&&(cum<target||k<2)&&k<3){cum+=ratio[k];k++;}
+  const model={mu:st.mu,sd:st.sd,vecs:vecs.slice(0,k),k,ratio,loadings:vecs};
+  model.scores=Z.map(z=>model.vecs.map(v=>v.reduce((s,w,j)=>s+w*z[j],0)));
+  return model;
+}
+function pcaProject(m,x){const z=x.map((v,j)=>(v-m.mu[j])/m.sd[j]);return m.vecs.map(v=>v.reduce((s,w,j)=>s+w*z[j],0));}
+function knnVote(scores,lab,q,K,mode){
+  const d=scores.map((r,i)=>[Math.sqrt(r.reduce((s,v,j)=>s+(v-q[j])**2,0)),i]).sort((a,b)=>a[0]-b[0]).slice(0,K);
+  // score of each neighbour: +1 (1), 0 (X), -1 (2); weighted average = sum(w*score)/sum(w)
+  const cnt=[0,0,0],sc=[1,0,-1];
+  let num=0,den=0;
+  for(const [dist,i] of d){
+    cnt[lab[i]]++;
+    const w=mode==='dist'?dist:1/(dist+0.05);
+    num+=w*sc[lab[i]];den+=w;
+  }
+  if(!(den>0)){num=d.reduce((a,x)=>a+sc[lab[x[1]]],0);den=d.length;}
+  const avg=num/den,share=cnt.map(c=>c/d.length);
+  const pick=avg>=0.5?'1':avg<=-0.5?'2':'X';
+  return {cnt,share,avg,pick,conf:Math.abs(avg),nearest:d.map(x=>x[1]),meanDist:mean(d.map(x=>x[0]))};
+}
+function analyseKNN(fixtures,past,K,target,mode){
+  const tr=past.filter(m=>m.o&&m.o.every(v=>v>1));
+  const up=fixtures.filter(f=>num(f.B365H)>1&&num(f.B365D)>1&&num(f.B365A)>1);
+  if(tr.length<30)return {items:[],error:'Need at least 30 past games with odds to compare against (found '+tr.length+').'};
+  if(!up.length)return {items:[],error:'No upcoming games with odds in this window.'};
+  const model=pcaFit(tr.map(m=>oddsVec(m.o)),target===undefined?0.95:target);
+  const lab=tr.map(m=>m.hg>m.ag?0:m.hg==m.ag?1:2);
+  const items=up.map(f=>{
+    const o=[num(f.B365H),num(f.B365D),num(f.B365A)],pc=pcaProject(model,oddsVec(o)),v=knnVote(model.scores,lab,pc,Math.min(K,tr.length),mode);
+    return {fx:f,pc,o,...v};
+  });
+  return {items,past:tr,lab,model,K};
+}
+function seasonCode(now){const y=now.getMonth()>=6?now.getFullYear():now.getFullYear()-1;const f=n=>String(n%100).padStart(2,'0');return [f(y)+f(y+1),f(y-1)+f(y)];}
+/*ENDCORE*/
+
+/* ---------- UI ---------- */
+const $=id=>document.getElementById(id);
+let store={cur:null,prev:null,fix:null};
+function setStatus(s){$('status').textContent=s;}
+
+const SRC='https://www.football-data.co.uk/';
+const RELAYS=[u=>u,
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
+  u=>'https://r.jina.ai/'+u];
+function cleanRelay(t){const i=t.indexOf('Markdown Content:');return (t.startsWith('Title:')&&i>=0)?t.slice(i+17).replace(/^\s*\n/,''):t;}
+let goodRelay=0;
+async function readBody(r,onP){
+  const total=+r.headers.get('content-length')||0;
+  if(!r.body||!r.body.getReader){onP(0.5);const t=await r.text();onP(1);return t;}
+  const rd=r.body.getReader(),dec=new TextDecoder();let got=0,txt='';
+  for(;;){const {done,value}=await rd.read();if(done)break;got+=value.length;txt+=dec.decode(value,{stream:true});
+    onP(total?Math.min(0.98,got/total):Math.min(0.9,0.2+got/200000));}
+  onP(1);return txt+dec.decode();
+}
+function cacheGet(k,ttl){try{const o=JSON.parse(localStorage.getItem('c:'+k)||'null');if(o&&(ttl===Infinity||Date.now()-o.t<ttl))return o.v;}catch(e){}return null;}
+function cacheStale(k){try{const o=JSON.parse(localStorage.getItem('c:'+k)||'null');return o?o.v:null;}catch(e){return null;}}
+function cacheSet(k,v){try{localStorage.setItem('c:'+k,JSON.stringify({t:Date.now(),v}));}catch(e){}}
+// race the direct request and every relay at once; first valid CSV wins, the rest are aborted
+const RNAMES=['direct','corsproxy.io','allorigins','codetabs','jina'];
+async function getCSV(path,onP,ttl,noCache){
+  const hit=noCache?null:cacheGet(path,ttl);if(hit){onP(1);return hit;}
+  const url=path.startsWith('http')?path:SRC+path,ctls=[],best=[],errs=[];
+  const one=async(i)=>{
+    try{
+      const ctl=new AbortController();ctls.push(ctl);const to=setTimeout(()=>ctl.abort(),12000);
+      const r=await fetch(RELAYS[i](url),{signal:ctl.signal});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      let t=await readBody(r,v=>{best[i]=v;onP(Math.max(...best.filter(x=>x!==undefined)));});
+      clearTimeout(to);t=cleanRelay(t);
+      if(t.trim().startsWith('<')||t.length<200)throw new Error('not a data file');
+      return t;
+    }catch(e){errs[i]=RNAMES[i]+': '+(e.name==='AbortError'?'timeout':e.message);throw e;}
+  };
+  try{
+    onP(0.05);
+    const t=await Promise.any(RELAYS.map((_,i)=>one(i)));
+    ctls.forEach(c=>{try{c.abort();}catch(e){}});
+    if(!noCache)cacheSet(path,t);onP(1);return t;
+  }catch(e){
+    const st=cacheStale(path);if(st){onP(1);return st;}
+    throw new Error(path.split('/').pop()+' -> '+errs.filter(Boolean).join(' | '));
+  }
+}
+function setProg(f,txt){const p=$('prog');p.hidden=false;p.classList.remove('ind');$('progBar').style.width=(f*100).toFixed(0)+'%';if(txt)setStatus(txt);}
+const OF={E0:['england','1-premierleague'],E1:['england','2-championship'],D1:['deutschland','1-bundesliga'],SP1:['espana','1-liga'],I1:['italy','1-seriea'],F1:['france','1-ligue1']};
+const CUPS=new Set(['CL','EL','UECL']);
+
+/* ---------- European cups: ESPN public scoreboard (current season fixtures + results) ---------- */
+const ESPN={CL:'uefa.champions',EL:'uefa.europa',UECL:'uefa.europa.conf'};
+const ymd=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+function parseESPN(txt){
+  let j;try{j=JSON.parse(txt);}catch(e){throw new Error('response is not JSON');}
+  return (j.events||[]).map(ev=>{
+    const c=(ev.competitions&&ev.competitions[0])||{},cp=c.competitors||[];
+    const h=cp.find(x=>x.homeAway==='home'),a=cp.find(x=>x.homeAway==='away');
+    if(!h||!a||!h.team||!a.team)return null;
+    const st=(ev.status&&ev.status.type)||(c.status&&c.status.type)||{};
+    const hg=parseInt(h.score),ag=parseInt(a.score);
+    const bad=/POSTPONED|CANCEL|ABANDON|SUSPEND|FORFEIT/i.test(st.name||'');
+    const played=st.state==='post'&&!bad&&isFinite(hg)&&isFinite(ag);
+    if(!played&&st.state==='post')return null;
+    return {id:ev.id,t:new Date(ev.date).getTime(),home:h.team.displayName||h.team.name,away:a.team.displayName||a.team.name,played,hg:played?hg:null,ag:played?ag:null};
+  }).filter(Boolean);
+}
+let espnDirectBad=false;
+async function espnGet(url){
+  if(!espnDirectBad){
+    try{
+      const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),12000);
+      const r=await fetch(url,{signal:ctl.signal});clearTimeout(to);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return await r.text();
+    }catch(e){espnDirectBad=true;}
+  }
+  return getCSV(url,()=>{},0,true); // race the public relays
+}
+async function espnRange(slug,from,to,ttl){
+  const key='espn:'+slug+':'+ymd(from)+'-'+ymd(to),hit=cacheGet(key,ttl);
+  if(hit)return hit;
+  const txt=await espnGet(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${ymd(from)}-${ymd(to)}`);
+  const ev=parseESPN(txt);
+  if(ev.length>=95&&to-from>2*864e5){ // a capped response: split the window and ask again
+    const mid=new Date(from.getTime()+Math.floor((to-from)/2/864e5)*864e5);
+    const [a,b]=await Promise.all([espnRange(slug,from,mid,ttl),espnRange(slug,new Date(mid.getTime()+864e5),to,ttl)]);
+    return a.concat(b);
+  }
+  cacheSet(key,ev);return ev;
+}
+/* bet365 (and DraftKings fallback) 1X2 odds for one event, from ESPN's core odds endpoint */
+function toDec(v){
+  if(typeof v==='number')return v>1?v:NaN;
+  if(typeof v!=='string')return NaN;
+  const f=v.match(/^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*$/);if(f)return 1+ +f[1]/+f[2];
+  const n=parseFloat(v);return n>1?n:NaN;
+}
+function amDec(x){x=+x;if(!isFinite(x)||x===0)return NaN;return x>0?1+x/100:1+100/Math.abs(x);}
+function parseOdds(txt){
+  let j;try{j=JSON.parse(txt);}catch(e){return null;}
+  const items=j.items||[];let dk=null;
+  for(const e of items){
+    const pr=e.provider||{},nm=String(pr.name||'');
+    if(/bet\s*365/i.test(nm)||String(pr.id)==='2000'){
+      const h=toDec(e.homeTeamOdds&&e.homeTeamOdds.odds&&e.homeTeamOdds.odds.value),
+            d=toDec(e.drawOdds&&(e.drawOdds.value!==undefined?e.drawOdds.value:(e.drawOdds.odds&&e.drawOdds.odds.value))),
+            a=toDec(e.awayTeamOdds&&e.awayTeamOdds.odds&&e.awayTeamOdds.odds.value);
+      if(h>1&&d>1&&a>1)return {o:[h,d,a],src:'b365'};
+    }
+    if(/draftkings/i.test(nm)||String(pr.id)==='100'){
+      const h=amDec(e.homeTeamOdds&&e.homeTeamOdds.moneyLine),d=amDec(e.drawOdds&&e.drawOdds.moneyLine),a=amDec(e.awayTeamOdds&&e.awayTeamOdds.moneyLine);
+      if(h>1&&d>1&&a>1)dk={o:[h,d,a],src:'dk'};
+    }
+  }
+  return dk;
+}
+async function eventOdds(slug,id,played){
+  const key='eo:'+slug+':'+id,hit=cacheGet(key,played?60*864e5:30*60e3);
+  if(hit!==null)return hit===0?null:hit;
+  const txt=await espnGet(`https://sports.core.api.espn.com/v2/sports/soccer/leagues/${slug}/events/${id}/competitions/${id}/odds`);
+  const r=parseOdds(txt);cacheSet(key,r||0);return r;
+}
+async function pool(list,n,fn){const q=list.slice();await Promise.all(Array.from({length:n},async()=>{for(let x;(x=q.shift());)await fn(x);}));}
+async function fetchCup(lg,startYear,days,onP){
+  const slug=ESPN[lg],now=new Date(),day0=new Date(now.getFullYear(),now.getMonth(),now.getDate()),end=new Date(now.getTime()+days*864e5);
+  const jobs=[];
+  const add=(from,to,ttl,tag)=>{for(let d=new Date(from);d<=to;d=new Date(d.getTime()+14*864e5)){const e=new Date(Math.min(d.getTime()+13*864e5,to.getTime()));jobs.push({from:new Date(d),to:e,ttl,tag});}};
+  add(new Date(startYear-1,8,1),new Date(startYear,5,15),7*864e5,'prev');                 // last season, rarely changes
+  add(new Date(startYear,8,1),new Date(day0.getTime()-864e5),20*60e3,'cur');              // this season up to yesterday
+  add(day0,end,10*60e3,'cur');                                                           // today and the coming days
+  let done=0;const out={prev:[],cur:[]},errs=[];
+  await pool(jobs,6,async j=>{
+    try{out[j.tag].push(...await espnRange(slug,j.from,j.to,j.ttl));}catch(e){errs.push(ymd(j.from)+': '+e.message);}
+    onP(0.5*(++done/jobs.length),'matches');});
+  const dedupe=l=>{const m=new Map();l.forEach(x=>m.set(x.home+'|'+x.away+'|'+Math.floor(x.t/864e5),x));return [...m.values()].map(x=>({id:x.id,date:new Date(x.t),home:x.home,away:x.away,played:x.played,hg:x.hg,ag:x.ag}));};
+  const prev=dedupe(out.prev),cur=dedupe(out.cur);
+  // odds: every finished game (history) + the unplayed games inside the window
+  const need=prev.concat(cur).filter(m=>m.id&&(m.played||(m.date>=day0&&m.date<=end)));
+  let od=0,oerr=0;
+  await pool(need,8,async m=>{
+    try{const r=await eventOdds(slug,m.id,m.played);if(r){m.o=r.o;m.src=r.src;}}catch(e){oerr++;}
+    onP(0.5+0.5*(++od/need.length),'odds');});
+  return {prev,cur,errs,failed:errs.length,total:jobs.length,oddsFailed:oerr,oddsTotal:need.length};
+}
+$('go').onclick=async()=>{
+  const lg=$('league').value, days=+$('days').value, [cs,ps]=seasonCode(new Date());
+  $('go').disabled=true;['stCard','outCard','tblCard'].forEach(i=>$(i).hidden=true);
+  const N=5,prog=new Array(N).fill(0),names=['football-data this season','football-data last season','football-data fixtures','schedule & scores','schedule last season'],errs=[];
+  const upd=()=>{const f=prog.reduce((a,b)=>a+b,0)/N;
+    setProg(f,'Downloading '+names.filter((_,i)=>prog[i]<1).join(', ')+'… '+(f*100).toFixed(0)+'%');};
+  const mk=i=>v=>{prog[i]=v;upd();};
+  const fail=i=>e=>{prog[i]=1;errs.push(e.message);upd();return '';};
+  const startYear=+('20'+cs.slice(0,2));
+  const ofUrl=y=>{const o=OF[lg];return o?`https://raw.githubusercontent.com/openfootball/${o[0]}/master/${y}-${String(y+1).slice(2)}/${o[1]}.txt`:null;};
+  const opt=(i,u,ttl)=>u?getCSV(u,mk(i),ttl).catch(fail(i)):(prog[i]=1,Promise.resolve(''));
+  if(CUPS.has(lg)){
+    try{
+      setProg(0,'Downloading fixtures and results from ESPN…');
+      const c=await fetchCup(lg,startYear,days,(f,ph)=>setProg(f,(ph==='odds'?'Downloading bet365 odds from ESPN… ':'Downloading fixtures and results from ESPN… ')+(f*100).toFixed(0)+'%'));
+      if(!c.cur.length&&!c.prev.length)throw new Error('ESPN returned no matches ('+c.failed+' of '+c.total+' requests failed).\n'+c.errs.slice(0,3).join('\n')+'\nIf every request failed, an ad-blocker/VPN/firewall is probably blocking espn.com.');
+      setProg(1,'Download complete – analysing…');
+      run('','','',lg,days,c.cur,startYear,c.prev,c.failed?['ESPN: '+c.failed+' of '+c.total+' date windows could not be loaded.']:[]);
+      setTimeout(()=>{$('prog').hidden=true;},600);
+    }catch(e){$('prog').hidden=true;setStatus('Could not download the data.\n'+e.message);}
+    finally{$('go').disabled=false;}
+    return;
+  }
+  try{
+    upd();
+    const [cur,prev,fix,ofc,ofp]=await Promise.all([
+      CUPS.has(lg)?(prog[0]=1,''):getCSV(`mmz4281/${cs}/${lg}.csv`,mk(0),30*60e3).catch(fail(0)),
+      CUPS.has(lg)?(prog[1]=1,''):getCSV(`mmz4281/${ps}/${lg}.csv`,mk(1),30*864e5).catch(fail(1)),
+      CUPS.has(lg)?(prog[2]=1,''):getCSV('fixtures.csv',mk(2),30*60e3).catch(fail(2)),
+      opt(3,ofUrl(startYear),30*60e3),opt(4,ofUrl(startYear-1),30*864e5)]);
+    if(!(cur&&prev)&&!ofc&&!ofp){
+      throw new Error('No data source reachable for this league.\n'+errs.join('\n')+(OF[lg]?'':'\n(This league has no schedule fallback.)'));
+    }
+    setProg(1,'Download complete – analysing…');
+    store={cur,prev,fix};
+    run(cur,prev,fix,lg,days,ofc,startYear,ofp,errs);
+    setTimeout(()=>{$('prog').hidden=true;},600);
+  }catch(e){
+    $('prog').hidden=true;
+    setStatus('Could not download the data.\n'+e.message);
+  }finally{$('go').disabled=false;}
+};
+function standings(played){
+  const t={};
+  const g=n=>t[n]||(t[n]={n,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,f:[]});
+  for(const m of played){
+    const H=g(m.home),A=g(m.away);H.p++;A.p++;H.gf+=m.hg;H.ga+=m.ag;A.gf+=m.ag;A.ga+=m.hg;
+    if(m.hg>m.ag){H.w++;A.l++;H.pts+=3;H.f.push('W');A.f.push('L');}
+    else if(m.hg<m.ag){A.w++;H.l++;A.pts+=3;H.f.push('L');A.f.push('W');}
+    else{H.d++;A.d++;H.pts++;A.pts++;H.f.push('D');A.f.push('D');}
+  }
+  return Object.values(t).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||a.n.localeCompare(b.n));
+}
+function renderStandings(rows,title){
+  $('stCard').hidden=false;$('stTitle').textContent=title+' – league table';
+  let h='<tr><th>#</th><th>Team</th><th class="n">P</th><th class="n">W</th><th class="n">D</th><th class="n">L</th><th class="n">GF</th><th class="n">GA</th><th class="n">GD</th><th class="n">Pts</th><th>Last 5</th></tr>';
+  rows.forEach((r,i)=>{h+=`<tr${i<4?' class="zone"':''}><td>${i+1}</td><td>${esc(r.n)}</td><td class="n">${r.p}</td><td class="n">${r.w}</td><td class="n">${r.d}</td><td class="n">${r.l}</td><td class="n">${r.gf}</td><td class="n">${r.ga}</td><td class="n">${r.gf-r.ga>0?'+':''}${r.gf-r.ga}</td><td class="n"><b>${r.pts}</b></td><td class="form">${r.f.slice(-5).map(x=>`<span class="f${x}">${x}</span>`).join('')}</td></tr>`;});
+  $('stTbl').innerHTML=rows.length?h:'<tr><td>No matches played yet this season.</td></tr>';
+}
+function renderUpcomingBasic(fixtures){
+  $('tblCard').hidden=false;
+  const fmt=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  let h='<tr><th>Date</th><th>Match</th><th class="n">1</th><th class="n">X</th><th class="n">2</th></tr>';
+  for(const f of fixtures)h+=`<tr><td>${fmt(f.date)}</td><td>${esc(f.HomeTeam)} – ${esc(f.AwayTeam)}</td><td class="n">${f.B365H||'–'}</td><td class="n">${f.B365D||'–'}</td><td class="n">${f.B365A||'–'}</td></tr>`;
+  $('tbl').innerHTML=fixtures.length?h:'<tr><td>No fixtures found in this window.</td></tr>';
+}
+/* openfootball schedule parser: returns unplayed matches */
+function parseOpenFootball(txt,startYear){
+  const MO={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+  const out=[];let y=startYear,lastM=-1,date=null,tm=[15,0];
+  const clean=t=>t.replace(/\s*\([A-Z]{2,3}\)\s*$/,'').trim();
+  for(const raw of txt.split('\n')){
+    if(!raw.trim()||raw.trim()[0]==='#'||raw.trim()[0]==='=')continue;
+    let m=raw.match(/^\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+([A-Z][a-z]{2})\s+(\d{1,2})(?:\s+(\d{4}))?\s*$/);
+    if(m){const mo=MO[m[1]];if(m[3])y=+m[3];else if(lastM>=6&&mo<lastM-3)y++;lastM=mo;date={y,mo,d:+m[2]};tm=[15,0];continue;}
+    if(!date)continue;
+    m=raw.match(/^\s+(?:(\d{1,2})[:.](\d{2})\s+)?(.+?)\s+v\s+(.+?)(?:\s+(\d+)-(\d+)\b.*)?\s*$/);
+    if(!m)continue;
+    if(m[1]!==undefined)tm=[+m[1],+m[2]]; // later games in the same slot have no time: reuse the last one
+    const played=m[5]!==undefined;
+    out.push({date:new Date(date.y,date.mo,date.d,tm[0],tm[1]),home:clean(m[3]),away:clean(m[4]),played,hg:played?+m[5]:null,ag:played?+m[6]:null});
+  }
+  return out;
+}
+const ofPlayed=list=>list.filter(m=>m.played).map(m=>({date:m.date,home:m.home,away:m.away,hg:m.hg,ag:m.ag,p:null,o:m.o||null,src:m.src})).sort((a,b)=>a.date-b.date);
+const ALIAS={'manchester united':'man united','manchester city':'man city','newcastle united':'newcastle','nottingham forest':'nott m forest','tottenham hotspur':'tottenham','wolverhampton wanderers':'wolves','brighton hove albion':'brighton','west ham united':'west ham','leeds united':'leeds','internazionale milano':'inter','atletico de madrid':'ath madrid','atletico madrid':'ath madrid','athletic club':'ath bilbao','bayern munchen':'bayern munich','borussia monchengladbach':'m gladbach','eintracht frankfurt':'ein frankfurt','bayer 04 leverkusen':'leverkusen','bayer leverkusen':'leverkusen','borussia dortmund':'dortmund','paris saint germain':'paris sg','olympique marseille':'marseille','olympique lyonnais':'lyon','real betis':'betis','celta de vigo':'celta','rayo vallecano':'vallecano','real sociedad':'sociedad','deportivo alaves':'alaves','sheffield wednesday':'sheffield weds','queens park rangers':'qpr','west bromwich albion':'west brom'};
+function normName(s){
+  s=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/&/g,' ').replace(/[^a-z0-9 ]/g,' ');
+  s=s.replace(/\b(fc|afc|cf|sc|ac|as|ssc|us|fk|ud|cd|sv|vfb|vfl|tsg|fsv|bsc|calcio|club|real club|1907|1899|1846|1893|1860|04|05|09)\b/g,' ').replace(/\s+/g,' ').trim();
+  return ALIAS[s]||s;
+}
+function matchTeam(name,known){
+  const n=normName(name);let best=null,bs=0;
+  for(const k of known){
+    const kn=normName(k);let sc=0;
+    if(kn===n)sc=100;
+    else if(kn.startsWith(n)||n.startsWith(kn))sc=80;
+    else if(kn.includes(n)||n.includes(kn))sc=65;
+    else{const a=new Set(n.split(' ')),b=kn.split(' ');const inter=b.filter(x=>a.has(x)).length;sc=inter?60*inter/Math.max(a.size,b.length):(n.slice(0,4)===kn.slice(0,4)?30:0);}
+    if(sc>bs){bs=sc;best=k;}
+  }
+  return bs>=30?best:name;
+}
+/* Poisson model for 1X2 when no bet365 odds exist yet */
+function poissonProbs(prevP,curP){
+  const rows=[];prevP.forEach(m=>rows.push([m,0.5]));curP.forEach(m=>rows.push([m,1]));
+  let wH=0,wA=0,W=0;const T={};
+  const g=n=>T[n]||(T[n]={gf:0,ga:0,w:0});
+  for(const [m,w] of rows){wH+=m.hg*w;wA+=m.ag*w;W+=w;
+    const H=g(m.home),A=g(m.away);H.gf+=m.hg*w;H.ga+=m.ag*w;H.w+=w;A.gf+=m.ag*w;A.ga+=m.hg*w;A.w+=w;}
+  const mh=(wH/W)||1.5,ma=(wA/W)||1.2,avg=(mh+ma)/2,K=4;
+  const att=t=>{const x=T[t];return x?(x.gf+K*avg)/(x.w+K)/avg:1;};
+  const def=t=>{const x=T[t];return x?(x.ga+K*avg)/(x.w+K)/avg:1;};
+  const pois=(l,k)=>{let p=Math.exp(-l);for(let i=1;i<=k;i++)p*=l/i;return p;};
+  return (h,a)=>{
+    const lh=mh*att(h)*def(a),la=ma*att(a)*def(h);let pH=0,pD=0,pA=0;
+    for(let i=0;i<=9;i++)for(let j=0;j<=9;j++){const p=pois(lh,i)*pois(la,j);if(i>j)pH+=p;else if(i==j)pD+=p;else pA+=p;}
+    const s=pH+pD+pA;return [pH/s,pD/s,pA/s];
+  };
+}
+function run(curTxt,prevTxt,fixTxt,lg,days,schedTxt,startYear,prevSchedTxt,errs){
+  const sy=startYear||new Date().getFullYear();
+  const ofCurList=Array.isArray(schedTxt)?schedTxt:(schedTxt?parseOpenFootball(schedTxt,sy):[]);
+  const hasB365=!!(curTxt&&prevTxt);
+  const curPlayed=hasB365?toPlayed(parseCSV(curTxt)):ofPlayed(ofCurList);
+  const prevPlayed=hasB365?toPlayed(parseCSV(prevTxt)):(Array.isArray(prevSchedTxt)?ofPlayed(prevSchedTxt):(prevSchedTxt?ofPlayed(parseOpenFootball(prevSchedTxt,sy-1)):[]));
+  const T=buildTeamStats(prevPlayed,curPlayed);
+  renderStandings(standings(curPlayed),$('league').selectedOptions[0].textContent);
+  const now=new Date(), day0=new Date(now.getFullYear(),now.getMonth(),now.getDate()), end=new Date(now.getTime()+days*864e5);
+  const inWin=d=>d&&d>=day0&&d<=end;
+  const real=fixTxt?parseCSV(fixTxt).filter(r=>r.Div===lg).map(r=>({...r,date:parseDate(r.Date,r.Time)}))
+    .filter(r=>inWin(r.date)&&num(r.B365H)>1):[];
+  const seen=new Set(real.map(r=>r.HomeTeam+'|'+r.AwayTeam));
+  const est=[];
+  if(ofCurList.length){
+    const known=Object.keys(T),prob=poissonProbs(prevPlayed,curPlayed);
+    for(const m of ofCurList){
+      if(m.played||!inWin(m.date))continue;
+      const h=matchTeam(m.home,known),a=matchTeam(m.away,known);
+      if(seen.has(h+'|'+a))continue;
+      if(m.o){est.push({Div:lg,date:m.date,HomeTeam:h,AwayTeam:a,est:false,real:true,B365H:m.o[0].toFixed(2),B365D:m.o[1].toFixed(2),B365A:m.o[2].toFixed(2)});continue;}
+      const p=prob(h,a);
+      est.push({Div:lg,date:m.date,HomeTeam:h,AwayTeam:a,est:true,B365H:(1/(p[0]*1.06)).toFixed(2),B365D:(1/(p[1]*1.06)).toFixed(2),B365A:(1/(p[2]*1.06)).toFixed(2)});
+    }
+  }
+  const fixtures=real.concat(est).sort((a,b)=>a.date-b.date);
+  // reference set: every played game of last season + this season, with its odds and real result
+  let past=prevPlayed.concat(curPlayed).sort((a,b)=>a.date-b.date);
+  const realHist=past.filter(m=>m.o&&m.o.every(v=>v>1));
+  const cupReal=CUPS.has(lg)&&realHist.length>=30;
+  if(cupReal)past=realHist;
+  else if(!hasB365){ // no bet365 history: walk-forward model odds (each game priced only from games before it)
+    const all=past;past=[];
+    for(let i=60;i<all.length;i++){
+      const p=poissonProbs([],all.slice(0,i))(all[i].home,all[i].away);
+      past.push({...all[i],o:[1/(p[0]*1.06),1/(p[1]*1.06),1/(p[2]*1.06)]});
+    }
+  }
+  const K=+$('knn').value;
+  const realUp=est.filter(f=>f.real).length,b365n=realHist.filter(m=>m.src==='b365').length;
+  let info=CUPS.has(lg)
+    ?(cupReal
+      ?`Fixtures, results and odds from ESPN: ${realHist.length} of ${prevPlayed.length+curPlayed.length} past games have bookmaker odds (${b365n} Bet 365, the rest DraftKings); ${realUp} upcoming game(s) with real odds, ${est.filter(f=>f.est).length} with model estimates (~). `
+      :`Fixtures and results from ESPN. Too few past games had bookmaker odds on ESPN (${realHist.length}), so ALL odds (past and upcoming) are model estimates (~), not bet365. `)
+    :hasB365?`Past bet365 odds loaded. ${real.length} upcoming match(es) with real bet365 odds, ${est.length} with model-estimated odds (~). `
+    :`⚠ football-data.co.uk (the only free source of bet365 odds) could not be reached from the browser, so results and the schedule come from openfootball and ALL odds (past and upcoming) are model estimates (~), not bet365. `;
+  if(errs&&errs.length&&CUPS.has(lg))info+=errs.join(' ')+' ';
+  const res=analyseKNN(fixtures,past,K,0,$('wmode').value);
+  const extra='';
+  if(res.error){renderUpcomingBasic(fixtures);setStatus(info+res.error+extra);return;}
+  setStatus(info+`${res.items.length} upcoming matches compared with ${res.past.length} past games.`);
+  render(res);
+}
+function render(res){
+  const {items,past,lab,model,K}=res;
+  $('outCard').hidden=false;$('tblCard').hidden=false;
+  $('varInfo').textContent='PCA on the three odds (1, X, 2), keeping PC1 and PC2 ('+model.k+' components, '+(model.ratio.slice(0,model.k).reduce((a,b)=>a+b,0)*100).toFixed(1)+'% of the variance). '+past.length+' past games are placed in that space with their real result; distance between two games = √((PC1₁−PC1₂)² + (PC2₁−PC2₂)²); each upcoming game takes its '+K+' nearest past games and computes the weighted average Σ(weight × score) ÷ Σ(weight), with score 1 = +1, X = 0, 2 = −1 and weight = '+($('wmode').value==='dist'?'the distance':'1 ÷ distance')+'. Average ≥ +0.5 gives 1, ≤ −0.5 gives 2, otherwise X.';
+  const cs=getComputedStyle(document.documentElement);
+  const col=['1','X','2'].map((_,i)=>cs.getPropertyValue(['--c1','--cx','--c2'][i]).trim()||['#1f9d55','#e0a100','#d64545'][i]);
+  const pickIdx={'1':0,'X':1,'2':2};
+  const cv=$('plot'),dpr=window.devicePixelRatio||1,W=cv.clientWidth||800,H=340;
+  cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,W,H);
+  const all=model.scores.concat(items.map(i=>i.pc));
+  const xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);
+  const mnx=Math.min(...xs),mxx=Math.max(...xs),mny=Math.min(...ys),mxy=Math.max(...ys),pad=34;
+  const sx=v=>pad+(v-mnx)/((mxx-mnx)||1)*(W-2*pad), sy=v=>H-pad-(v-mny)/((mxy-mny)||1)*(H-2*pad);
+  g.strokeStyle=cs.getPropertyValue('--line');g.strokeRect(pad,pad/2,W-2*pad,H-pad*1.5);
+  g.fillStyle=cs.getPropertyValue('--mut');g.font='11px system-ui';g.fillText('PC1 (odds)',W-pad-60,H-10);g.fillText('PC2',4,pad/2+8);
+  g.globalAlpha=0.4;
+  model.scores.forEach((p,i)=>{g.beginPath();g.arc(sx(p[0]),sy(p[1]),3,0,7);g.fillStyle=col[lab[i]];g.fill();});
+  g.globalAlpha=1;
+  items.forEach(it=>{
+    const x=sx(it.pc[0]),y=sy(it.pc[1]);
+    g.beginPath();g.arc(x,y,8,0,7);g.fillStyle=col[pickIdx[it.pick]];g.fill();g.lineWidth=2;g.strokeStyle=cs.getPropertyValue('--ink');g.stroke();
+    g.fillStyle=cs.getPropertyValue('--ink');g.fillText(short(it.fx.HomeTeam)+'-'+short(it.fx.AwayTeam),x+11,y+4);
+  });
+  const fmt=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  let h='<tr><th>Date</th><th>Match</th><th class="n">1</th><th class="n">X</th><th class="n">2</th><th>Nearest '+K+' results</th><th class="n">Average</th><th>Suggestion</th><th>Nearest game result</th></tr>';
+  for(const it of items){
+    const f=it.fx,e=f.est?'~':'',sh=it.share,ng=past[it.nearest[0]],nr=lab[it.nearest[0]],nk=['1','X','2'][nr];
+    h+=`<tr><td>${fmt(f.date)}</td><td>${esc(f.HomeTeam)} – ${esc(f.AwayTeam)}</td>
+      <td class="n">${e}${it.o[0].toFixed(2)}</td><td class="n">${e}${it.o[1].toFixed(2)}</td><td class="n">${e}${it.o[2].toFixed(2)}</td>
+      <td>1:${it.cnt[0]} &nbsp;X:${it.cnt[1]} &nbsp;2:${it.cnt[2]}</td>
+      <td class="n"><b>${it.avg>0?'+':''}${it.avg.toFixed(2)}</b></td>
+      <td><span class="pill p${it.pick}">${it.pick}</span></td>
+      <td><span class="pill p${nk}">${nk}</span> <span class="note">${esc(ng.home)} ${ng.hg}-${ng.ag} ${esc(ng.away)}</span></td></tr>`;
+  }
+  $('tbl').innerHTML=h;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function short(t){return t.length>9?t.slice(0,8)+'.':t;}
+
+/* ---------- demo data (synthetic, clearly not real) ---------- */
+$('demo').onclick=()=>{
+  let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  const teams=['Alpha FC','Beta United','Gamma City','Delta Town','Epsilon SC','Zeta Rovers','Eta Athletic','Theta FC','Iota United','Kappa City','Lambda Utd','Mu Wanderers'];
+  const str=Object.fromEntries(teams.map(t=>[t,rnd()*1.6-0.8]));
+  const odds=(a,b)=>{const d=str[a]-str[b]+0.3,ph=1/(1+Math.exp(-d*1.4))*0.75,pa=(1-1/(1+Math.exp(-d*1.4)))*0.75,px=1-ph-pa;return [ph,px,pa].map(p=>(0.94/p).toFixed(2));};
+  const fm=d=>`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  const season=(start,rounds)=>{let s='Div,Date,Time,HomeTeam,AwayTeam,FTHG,FTAG,FTR,B365H,B365D,B365A\n';let d=new Date(start);
+    for(let r=0;r<rounds;r++){for(let i=0;i<teams.length;i+=2){const idx=[...teams].sort(()=>rnd()-0.5);const a=idx[i],b=idx[i+1];
+      const e=str[a]-str[b]+0.3,hg=Math.max(0,Math.round(1.4+e+(rnd()-0.5)*2.5)),ag=Math.max(0,Math.round(1.1-e+(rnd()-0.5)*2.5));
+      const o=odds(a,b);s+=`DEMO,${fm(d)},15:00,${a},${b},${hg},${ag},${hg>ag?'H':hg<ag?'A':'D'},${o.join(',')}\n`;}
+      d=new Date(d.getTime()+6*864e5);}return s;};
+  const now=new Date();let fx='Div,Date,Time,HomeTeam,AwayTeam,B365H,B365D,B365A\n';
+  for(let k=0;k<2;k++){const idx=[...teams].sort(()=>rnd()-0.5);const d=new Date(now.getTime()+(1+k*2)*864e5);
+    for(let i=0;i<teams.length;i+=2){fx+=`DEMO,${fm(d)},18:00,${idx[i]},${idx[i+1]},${odds(idx[i],idx[i+1]).join(',')}\n`;}}
+  const opt=document.createElement('option');opt.value='DEMO';opt.textContent='DEMO (synthetic)';$('league').appendChild(opt);$('league').value='DEMO';
+  store={cur:season(new Date(now.getTime()-70*864e5),10),prev:season(new Date(now.getTime()-450*864e5),20),fix:fx};
+  setStatus('Synthetic demo data – not real matches or odds.');
+  run(store.cur,store.prev,store.fix,'DEMO',4);
+};
+
+/* startup message + preview-frame warning */
+(function(){
+  let m='Ready – choose a league and press Load & analyse.';
+  try{if(window.top!==window)m+='\n⚠ This page is running inside a preview frame, which usually blocks network downloads. Download the file and open it directly in Chrome/Safari/Edge (double-click it).';}
+  catch(e){m+='\n⚠ This page is running inside a preview frame, which usually blocks network downloads. Download the file and open it directly in Chrome/Safari/Edge (double-click it).';}
+  setStatus(m);
+})();
+</script>
+</body>
+</html>
